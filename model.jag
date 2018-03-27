@@ -1,0 +1,74 @@
+model {
+
+  # K is number of subpopulations modelled
+  for (k in 1:K) {
+  
+    # Set number of initially susceptibles per subpopulation
+    S[1,k] <- trunc(N[k]*su[k])
+    
+    # Prior for the fractions of initially susceptibles per subpopulation
+    su[k] ~ dunif(0, 0.4)
+        
+    # Compound symmetric matrix for transmission intensity from different subpopulations
+    # Same subpop = 1, other subpop = a, a<1
+    A[k,k] <- 1
+    for(j in (k+1):K) {
+      A[k,j] <- a
+      A[j,k] <- a
+    }
+    
+    # Calculate effective reproduction number per subpopulation at the start
+    Re[k] <- R0*su[k]
+    
+    # Calculate percentage needed to immunize to prevent sustained spread
+    VC[k] <- (1 - 1/R0) - (1 - su[k])
+    
+  }
+  
+  # T is number of timepoints in the data
+  for (t in 2:T) {
+    for (k in 1:K) {
+      I[t,k] ~ dbin(1 - exp(-R0 * exp(r[t,k]) * sum(I[t-1,]*A[k,]) / N[k]), S[t-1,k])
+      S[t,k] <- S[t-1,k] - I[t,k]
+      r[t,k] ~ dnorm(0, pow(rsd, -2))
+    }
+  }
+  
+  # Prior for basic reproduction number
+  R0 ~ dunif(10,20)
+  
+  # Prior for a, the fraction for transmission intensity from different subpopulation
+  a ~ dbeta(1,1)
+  
+  # Prior for the standard deviation of the random effects
+  rsd ~ dunif(0.1, 10)
+  
+  
+  # ** Now let's project the epidemic into the future **
+  
+  # Use the last number of susceptibles and infected
+  for (k in 1:K) {
+    Sf[1,k] <- S[T,k]
+    If[1,k] <- I[T,k]
+  }
+  
+  # F is number of timepoints to project into
+  for (t in 2:F) {
+    for (k in 1:K) {
+      If[t,k] ~ dbin(1 - exp(-R0 * exp(rf[t,k]) * sum(If[t-1,]*A[k,]) / N[k]), Sf[t-1,k])
+      Sf[t,k] <- Sf[t-1,k] - If[t,k]
+      rf[t,k] ~ dnorm(0, pow(rsd, -2))
+    }
+  }
+  
+  # Final epidemic size per subpopulation (vector of length K)
+  FES <- S[1,] - Sf[F,]   # initial susceptibles vs final susceptibles
+  
+  # Intermediate epidemic sizes (per 6 months)
+  for (m in 1:trunc(F/13)) {
+    for (k in 1:K) {
+      IES[m,k] <- S[1,k] - Sf[m*13,k]
+    }
+  }
+}
+
